@@ -1,0 +1,13 @@
+# VoxCPM2 -- optimized (two changed keys vs voxcpm2_default.yaml, no
+# code changes): stage admission cap and the decode-graph batch limit raised
+# together, 8 -> 32. Raising only one of the pair would leave batches above
+# the graph limit off the CUDA decode graph.
+base_config: voxcpm2_default.yaml
+
+stages:
+  - stage_id: 0
+    max_num_seqs: 32
+    engine_extras:
+      hf_overrides:
+        voxcpm2_runtime_config:
+          unified_decode_graph_max_batch_size: 32

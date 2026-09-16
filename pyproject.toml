@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "thetalker"
+version = "0.1.0"
+description = "Streaming-serving benchmark client and deploy configs for open text-to-speech models on vllm-omni"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "TheStage AI", email = "contact@thestage.ai" }]
+keywords = ["tts", "text-to-speech", "vllm", "vllm-omni", "benchmark", "streaming"]
+dependencies = ["numpy"]
+
+[project.optional-dependencies]
+# The serving framework the benchmark tables were measured on. The vLLM wheel is
+# named by URL because the PyPI build targets CUDA 13. A direct reference is
+# valid for a git or local install; PyPI forbids it in uploaded metadata, so a
+# published release states the same pin as an instruction instead.
+nvidia = [
+    "vllm @ https://github.com/vllm-project/vllm/releases/download/v0.28.0/vllm-0.28.0+cu129-cp38-abi3-manylinux_2_28_x86_64.whl",
+    "vllm-omni==0.28.0",
+    # precompiled FlashInfer kernels for the pinned vLLM: the first start needs no CUDA toolkit
+    "flashinfer-jit-cache @ https://github.com/flashinfer-ai/flashinfer/releases/download/v0.6.16.post3/flashinfer_jit_cache-0.6.16.post3+cu130-cp39-abi3-manylinux_2_28_x86_64.whl",
+    # model-side package vllm-omni imports but does not declare
+    "voxcpm>=2.0",       # VoxCPM2
+]
+test = ["pytest"]
+# examples/get_reference.py: fetch an openly licensed reference clip
+examples = ["datasets>=3.0", "soundfile"]
+# examples/load_test_locust.py: open-loop load
+load = ["locust", "requests"]
+
+[project.urls]
+Homepage = "https://thestage.ai"
+Platform = "https://app.thestage.ai"
+Repository = "https://github.com/TheStageAI/TheTalker"
+Issues = "https://github.com/TheStageAI/TheTalker/issues"
+
+[project.scripts]
+thetalker-deploy = "thetalker.deploy_configs:main"
+thetalker-bench = "thetalker.client:main"
+
+[tool.setuptools]
+packages = ["thetalker"]
+
+[tool.setuptools.package-data]
+thetalker = ["deploy/*.yaml"]
