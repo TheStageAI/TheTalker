@@ -1,0 +1,11 @@
+# OmniVoice -- optimized (one changed key vs omnivoice_default.yaml:
+# dtype float32 -> bfloat16; no code changes).
+#
+# dtype wraps the whole pipeline construction and weight load in
+# set_default_torch_dtype, so the generator/decoder parameters are
+# materialised in bf16 instead of fp32.
+base_config: omnivoice_default.yaml
+
+stages:
+  - stage_id: 0
+    dtype: "bfloat16"

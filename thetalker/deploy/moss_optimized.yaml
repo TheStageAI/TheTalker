@@ -1,0 +1,17 @@
+# MOSS-TTS 8B -- optimized ("tuned stock": the two admission caps raised;
+# everything else identical to moss_default.yaml, no code changes).
+#   stage-0 max_num_seqs  4 -> 32  (probe saturation flattens exactly at 4)
+#   stage-1 max_num_seqs  1 -> 8   (codec stream-state capacity == max_num_seqs;
+#                                   1 serializes every codec decode; 8 also
+#                                   widens the CUDA-graph capture grid so the
+#                                   streaming decoder gets batch>1 buckets)
+base_config: moss_default.yaml
+
+stages:
+  - stage_id: 0
+    max_num_seqs: 32
+    gpu_memory_utilization: 0.30
+  - stage_id: 1
+    max_num_seqs: 8
+    gpu_memory_utilization: 0.30
+    max_num_batched_tokens: 65536

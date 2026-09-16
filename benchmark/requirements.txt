@@ -1,0 +1,3 @@
+# The benchmark client itself. The example scripts need more; those are the
+# package's optional groups, thetalker[examples] and thetalker[load].
+numpy

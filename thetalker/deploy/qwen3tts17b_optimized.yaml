@@ -1,0 +1,27 @@
+# Qwen3-TTS 1.7B-Base -- optimized (documented serving-parameter changes on
+# top of the stock vllm-omni config; no code changes).
+#
+# The only difference from qwen3tts17b_default.yaml is the connector
+# extra: first packet 1 -> 16 frames, chunk 25 -> 75 frames,
+# ref_code_context_frames made explicit (matches the base's default of 72),
+# and the CUDA-graph capture ladder retuned for the larger chunk/first-packet
+# sizes: first packet = ref_tail(58) + 16 = 74, steady window =
+# ref_tail(58) + left_context(72) + chunk(75) = 205, internal non-streaming
+# chunk stays 325; the ladder covers the sizes in between. Neither stage
+# changes (both keep max_num_seqs 64 in this config).
+base_config: qwen3tts17b_default.yaml
+
+connectors:
+  connector_of_shared_memory:
+    name: SharedMemoryConnector
+    extra:
+      codec_streaming: true
+      connector_get_sleep_s: 0.01
+      connector_get_max_wait_first_chunk: 3000
+      connector_get_max_wait: 300
+      codec_chunk_frames: 75
+      codec_left_context_frames: 72
+      initial_codec_chunk_frames: 16
+      decode_batch_max_size: 4
+      ref_code_context_frames: 72
+      decode_cudagraph_capture_sizes: [74, 91, 109, 128, 149, 170, 190, 205, 325]
