@@ -104,9 +104,9 @@ def unknown_name_message(name: str) -> str:
     lines += [f"  {alias} -> {target}" for alias, target in sorted(ALIASES.items())]
     lines += [
         "",
-        "The library's other overlay names (chunk75_refonce_predf3f, chunk75,",
-        "chunk50, predf3f, batch) switch on library-only keys, so no config here",
-        "reproduces them.",
+        "The library's other overlay names (chunk75_init16, chunk75_init16_mk,",
+        "chunk75_refonce_predf3f, chunk75, chunk50, predf3f, batch) switch on",
+        "library-only keys, so no config here reproduces them.",
     ]
     return "\n".join(lines)
 

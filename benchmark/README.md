@@ -188,8 +188,8 @@ c32, warmup 8 at c8 and 100 at c32, one `--out-dir` per point. Read the numbers 
 | Cost | `aggregate_RTFx` at c32, with the input characters of the requests delivered without a gap |
 
 The third configuration of the published tables, thestage-vllm-omni, is the same
-two commands with that library installed and its own overlay named on
-`--deploy-config`; it is not reproducible from this repository alone.
+two commands with that library installed and no `--deploy-config`, so the library
+applies its own overlay; it is not reproducible from this repository alone.
 
 # Quality: word error rate
 

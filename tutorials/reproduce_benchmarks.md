@@ -145,7 +145,8 @@ normaliser. See
 
 The published tables carry a third configuration, thestage-vllm-omni. It is the
 same two commands with that library installed and no `--deploy-config`: the
-library applies its own overlay by default. It is not reproducible from this
+library applies its own overlay by default, which on Qwen3-TTS runs the code
+predictor as one persistent GPU kernel. It is not reproducible from this
 repository alone.
 
 ## A worked smoke run
@@ -156,8 +157,8 @@ H100 80GB with vLLM 0.28.0 and vllm-omni 0.28.0.
 
 **These numbers are a 20-request smoke test, not a benchmark result.** A point
 that short is dominated by ramp-up and by its own tail: it ran for 4.6 seconds
-in total, so its RTFx is far below the 49.64 the Benchmarks table reports for
-this model at c8. Nothing here should be quoted or compared. What it does prove
+in total, so its RTFx is far below the 50.6 a full 300-request point reaches with
+this configuration at c8. Nothing here should be quoted or compared. What it does prove
 is that the server, the deploy config, the reference clip and the client agree.
 
 ```shell

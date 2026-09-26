@@ -42,14 +42,16 @@ MOSS-TTS 8B and OmniVoice.
 
 `thestage-vllm-omni`, TheStage AI's serving library for these models, is measured
 as a third configuration in the Benchmarks tables. It is a separately licensed,
-access-token-gated package, not on PyPI, and its Qwen3-TTS and OmniVoice overlays
-need it installed. It ships its own deploy overlays, applies them by default when `vllm serve`
-gets no `--deploy-config`, and names them through a `thestage-vllm-omni-overlay`
-command; two of those names -- `batch32` and `tuned` -- resolve to the same
-configuration as `voxcpm2_optimized` and `moss_optimized` here, checked through
-vllm-omni's own loader. The Qwen3-TTS and OmniVoice overlays additionally switch
-on library-only keys, so no config in this repository reproduces them: that third
-configuration is not reproducible from this repository alone.
+access-token-gated package, not on PyPI. It ships its own deploy overlays, applies
+one by default when `vllm serve` gets no `--deploy-config`, and names them through
+a `thestage-vllm-omni-overlay` command; two of those names -- `batch32` and
+`tuned` -- resolve to the same configuration as `voxcpm2_optimized` and
+`moss_optimized` here, checked through vllm-omni's own loader. On Qwen3-TTS the
+library column is measured on its default overlay `qwen3_tts/chunk75_init16`,
+which runs the code predictor as one persistent GPU kernel. The Qwen3-TTS and
+OmniVoice overlays switch on library-only keys, so no config in this repository
+reproduces them: that third configuration is not reproducible from this
+repository alone.
 
 ### Repository layout
 
@@ -170,6 +172,11 @@ in the installed vllm-omni. With it installed, `vllm serve <model> --omni
 configuration; the `--deploy-config` lines below select a configuration from the
 tables instead, and always win.
 
+On Qwen3-TTS the library's default configuration runs the code predictor as one
+persistent GPU kernel, which ships prebuilt for the H100 SXM. The server log line
+`code_predictor: megakernel (buckets ...)` shows it is active; on other GPUs the
+library serves the stock code predictor.
+
 ### 3. A reference clip
 
 All five checkpoints in step 4 are served in the `Base` task type, which is voice
@@ -262,15 +269,15 @@ python benchmark/run_benchmark.py \
 
 `thetalker-deploy` resolves the configs by the names in the third column;
 `_default` is the file vllm-omni 0.28.0 ships and `_optimized` the same file with
-the serving parameters below. The fourth column is the name
-`thestage-vllm-omni-overlay` uses for that family when the library is installed,
-and the configuration the library serves when `vllm serve` gets no
+the serving parameters below. The fourth column is the
+`thestage-vllm-omni-overlay` name of the configuration the library column is
+measured on, which is also what the library serves when `vllm serve` gets no
 `--deploy-config`.
 
 | Model | Served model id | Deploy configs | thestage-vllm-omni overlay | What `_optimized` changes | Model weights | RTFx c8 / c32 |
 |---|---|---|---|---|---|---|
-| Qwen3-TTS 1.7B-Base | `Qwen/Qwen3-TTS-12Hz-1.7B-Base` | `qwen3tts17b_{default,optimized}` | `chunk75_init16` | first chunk 1 to 16 frames, chunk 25 to 75, decode-graph batching turned on | 4.4 GiB | 49.64 / 87.24 |
-| Qwen3-TTS 0.6B-Base | `Qwen/Qwen3-TTS-12Hz-0.6B-Base` | `qwen3tts06b_{default,optimized}` | `chunk75_init16` | the same keys as the 1.7B | 2.5 GiB | 53.13 / 87.20 |
+| Qwen3-TTS 1.7B-Base | `Qwen/Qwen3-TTS-12Hz-1.7B-Base` | `qwen3tts17b_{default,optimized}` | `chunk75_init16` | first chunk 1 to 16 frames, chunk 25 to 75, decode-graph batching turned on | 4.4 GiB | 56.90 / 99.74 |
+| Qwen3-TTS 0.6B-Base | `Qwen/Qwen3-TTS-12Hz-0.6B-Base` | `qwen3tts06b_{default,optimized}` | `chunk75_init16` | the same keys as the 1.7B | 2.5 GiB | 58.43 / 102.51 |
 | VoxCPM2 | `openbmb/VoxCPM2` | `voxcpm2_{default,optimized}` | `batch32` | `max_num_seqs` and decode-graph batch limit 8 to 32 | 4.9 GiB | 56.18 / 106.17 |
 | MOSS-TTS 8B | `OpenMOSS-Team/MOSS-TTS` | `moss_{default,optimized}` | `tuned` | `max_num_seqs` 4 to 32 on stage 0, 1 to 8 on stage 1 | 24.5 GiB | 29.91 / 62.76 |
 | OmniVoice | `k2-fsa/OmniVoice` | `omnivoice_{default,optimized}` | `batch` | dtype fp32 to bf16 | 2.2 GiB | 41.90 / 44.36 |
@@ -279,8 +286,8 @@ Model weights are the loaded-weight footprint the server reports on an H100 80GB
 at the recommended setting, summed over the pipeline's stages; KV cache and
 CUDA-graph pools are on top of it and are sized by `gpu_memory_utilization`.
 OmniVoice on the shipped fp32 configuration is twice the figure shown. RTFx is
-also at the recommended setting, which for VoxCPM2, MOSS-TTS and OmniVoice
-includes thestage-vllm-omni; see [Benchmarks](#benchmarks) for the split.
+also at the recommended setting, which for every model includes
+thestage-vllm-omni; see [Benchmarks](#benchmarks) for the split.
 
 Qwen3-TTS and VoxCPM2 stream audio chunk by chunk. MOSS-TTS and OmniVoice
 deliver the whole utterance at the end, so continuity and TTFA are not separable
@@ -288,10 +295,13 @@ for them: first audio equals total response time.
 
 `batch32` and `tuned` resolve to the same configuration as the matching
 `_optimized` file here and are accepted by `thetalker-deploy` as aliases.
-The library's default Qwen3-TTS overlay, `chunk75_init16`, resolves to the same
-configuration as `qwen3tts17b_optimized` and `qwen3tts06b_optimized`; its
-`chunk75_refonce_predf3f` and `batch` overlays additionally switch on
-library-only keys, so no config in this repository reproduces those two.
+The library's Qwen3-TTS overlay `chunk75_init16` (also accepted under its alias
+`chunk75_init16_mk`) starts from the keys of `qwen3tts17b_optimized`, grows the
+codec chunk through 8, 16 and 32 frames to the 75-frame steady chunk with
+vllm-omni's own `codec_chunk_ramp` key, and carries three library keys that stock
+vllm-omni ignores: `first_chunk_max_per_step` and `first_chunk_priority` for the
+codec scheduler, and `code_predictor_megakernel`. No config in this repository
+reproduces that overlay or OmniVoice's `batch`.
 
 What each of those keys does, and how the CUDA-graph capture ladder is derived:
 [tutorials/serving_parameters.md](tutorials/serving_parameters.md). Why MOSS-TTS
@@ -457,16 +467,18 @@ so its column is the part configuration cannot reach.
 | Model | What the optimized parameters change | Optimized parameters over the vllm-omni default, c8 / c32 | thestage-vllm-omni over the optimized parameters, c8 / c32 | RTFx at the recommended setting, c8 / c32 |
 |---|---|---|---|---|
 | VoxCPM2 | `max_num_seqs` and decode-graph batch limit 8 to 32 | 1.00x / 1.45x | 1.21x / 1.50x | 56.18 / 106.17 |
-| Qwen3-TTS 0.6B-Base | first chunk 1 to 16 frames, chunk 25 to 75, decode-graph capture sizes retuned | 1.03x / 1.09x | 1.0x / 1.0x | 53.13 / 87.20 |
-| Qwen3-TTS 1.7B-Base | the same keys as the 0.6B | 1.00x / 1.08x | 1.0x / 1.0x | 49.64 / 87.24 |
+| Qwen3-TTS 0.6B-Base | first chunk 1 to 16 frames, chunk 25 to 75, decode-graph batching turned on | 1.0x / 1.09x | 1.11x / 1.16x | 58.43 / 102.51 |
+| Qwen3-TTS 1.7B-Base | the same keys as the 0.6B | 1.0x / 1.10x | 1.12x / 1.13x | 56.90 / 99.74 |
 | MOSS-TTS 8B | `max_num_seqs` 4 to 32 on stage 0, 1 to 8 on stage 1 | n/a | n/a | 29.91 / 62.76 |
 | OmniVoice | dtype fp32 to bf16 | n/a | n/a | 41.90 / 44.36 |
 
 Setup: H100 80GB, vLLM 0.28.0 + vllm-omni 0.28.0, torch 2.13 / CUDA 12.9,
 Seed-TTS-Eval EN, 300 requests per point, warmup 8@c8 + 100@c32; c8 and c32.
 Parameter gain = optimized parameters against the file vllm-omni ships; library
-gain = thestage-vllm-omni on top of those parameters, both sides of each ratio
-measured back to back in one session. 1.0x = within session-to-session noise.
+gain = thestage-vllm-omni on top of those parameters, on `chunk75_init16` for
+Qwen3-TTS. Both sides of each ratio are measured on the same day, back to back in
+one session except the Qwen3-TTS 1.7B library ratio, whose two sides are two
+sessions. 1.0x = a ratio of 1.05x or less, within session-to-session noise.
 n/a: for MOSS-TTS and OmniVoice the two steps cannot be separated, because the
 MOSS-TTS default file only starts with the library's codec fix and OmniVoice's
 only change, bf16, needs the library; measured together against the vllm-omni
@@ -474,17 +486,21 @@ default they are 1.55x / 3.30x for MOSS-TTS (both sides with the codec fix) and
 6.07x / 6.45x for OmniVoice (against the fp32 default). See
 [tutorials/known_issues_0.28.md](tutorials/known_issues_0.28.md).
 
-![Throughput on one H100: vllm-omni with the optimized parameters against thestage-vllm-omni](images/throughput_c32.png)
+![Throughput at 32 concurrent streams on one H100: vllm-omni against thestage-vllm-omni](images/throughput_c32.png)
 
-Qwen3-TTS is where the serving parameters buy the least throughput: 1.00x and
-1.08x on the 1.7B checkpoint, 1.03x and 1.09x on the 0.6B. The library is not
-quoted for this family either. Three sessions, two in one order and one
-reversed, 300 requests per point with this client on vllm-omni 0.28.0, put it at
-0.99x / 1.02x, 0.99x / 1.04x and 0.99x / 1.02x against the optimized parameters.
-The article reports those as within session-to-session noise, so the column is
-dropped rather than quoted.
-The Qwen3-TTS key that decides the outcome is the first-chunk size, and it
-decides continuity rather than throughput.
+RTFx at 32 concurrent streams, the same runs as the table. The grey bars are
+vllm-omni with the optimized parameters for Qwen3-TTS and VoxCPM2 and with its
+shipped file for OmniVoice, whose only change needs the library. The orange bars
+are thestage-vllm-omni, on `chunk75_init16` for Qwen3-TTS. MOSS-TTS has no
+grey bar because it does not start on vllm-omni.
+
+Qwen3-TTS is where the serving parameters buy the least throughput: 1.0x at 8
+streams on both checkpoints, 1.10x at 32 on the 1.7B and 1.09x on the 0.6B. The
+Qwen3-TTS key that decides the outcome is the first-chunk size, and it decides
+continuity rather than throughput. The library adds 1.12x / 1.13x on the 1.7B
+and 1.11x / 1.16x on the 0.6B at 8 / 32 streams, running the code predictor's
+residual-codebook loop, 15 steps through 5 layers for every audio frame, as one
+persistent GPU kernel instead of about a thousand kernel launches.
 
 VoxCPM2 is the opposite case. Its shipped config admits 8 requests on every
 device, so raising the admission cap and the decode-graph batch limit together
@@ -498,24 +514,21 @@ the same serving parameters (`qwen3tts17b_*`, `qwen3tts06b_*`); they run without
 reference clip, so their absolute RTFx sits above Base and is not comparable to
 it. Measured on the same protocol with 100 requests per speed point. The gains
 are the ones Base shows: the parameters buy 1.09x to 1.10x at 32 streams and fix
-continuity, the library adds nothing measurable.
+continuity. The library's kernel overlay is not measured on these checkpoints.
 
-| Checkpoint | RTFx vllm-omni default, c8 / c32 | RTFx optimized parameters, c8 / c32 | RTFx thestage-vllm-omni, c8 / c32 | Optimized over default, c8 / c32 | Library over optimized, c8 / c32 | Continuity default, c8 / c32 | Continuity optimized, c8 / c32 | First audio optimized, c8 / c32 | WER default / optimized / library |
-|---|---|---|---|---|---|---|---|---|---|
-| 1.7B-CustomVoice | 55.73 / 99.50 | 58.76 / 108.24 | 61.86 / 111.79 | 1.05x / 1.09x | 1.0x / 1.0x | 3% / 0% | 100% / 100% | 0.20 / 0.48 | 1.50% / 1.57% / 1.79% |
-| 1.7B-VoiceDesign | 53.80 / 92.12 | 57.79 / 101.25 | 59.47 / 107.15 | 1.07x / 1.10x | 1.0x / 1.0x | 2% / 0% | 100% / 99% | 0.20 / 0.46 | 1.83% / 2.07% / 1.32% |
-| 0.6B-CustomVoice | 60.38 / 104.21 | 62.27 / 113.67 | 65.28 / 113.97 | 1.03x / 1.09x | 1.0x / 1.0x | 1% / 0% | 100% / 100% | 0.19 / 0.49 | 2.41% / 1.52% / 2.37% |
+| Checkpoint | RTFx vllm-omni default, c8 / c32 | RTFx optimized parameters, c8 / c32 | Optimized over default, c8 / c32 | Continuity default, c8 / c32 | Continuity optimized, c8 / c32 | First audio optimized, c8 / c32 | WER default / optimized |
+|---|---|---|---|---|---|---|---|
+| 1.7B-CustomVoice | 55.73 / 99.50 | 58.76 / 108.24 | 1.05x / 1.09x | 3% / 0% | 100% / 100% | 0.20 / 0.48 | 1.50% / 1.57% |
+| 1.7B-VoiceDesign | 53.80 / 92.12 | 57.79 / 101.25 | 1.07x / 1.10x | 2% / 0% | 100% / 99% | 0.20 / 0.46 | 1.83% / 2.07% |
+| 0.6B-CustomVoice | 60.38 / 104.21 | 62.27 / 113.67 | 1.03x / 1.09x | 1% / 0% | 100% / 100% | 0.19 / 0.49 | 2.41% / 1.52% |
 
 Setup: H100 80GB, vLLM 0.28.0 + vllm-omni 0.28.0, Seed-TTS-Eval EN, 100 requests
-per speed point after a warmup of 8 at c8 and 100 at c32. The default and
-optimized columns are stock vllm-omni without the library, measured in one
-session. The library column is the optimized deploy file with thestage-vllm-omni
-active, measured in a second session against the same file with the library
-switched off, and the library ratio is taken inside that session. RTFx = audio
-seconds per wall-clock second, higher is better; 1.0x = within session-to-session
-noise. Continuity = share of streams delivered without a stall. First audio =
-median first-byte TTFA in seconds, lower is better. WER in % over 200 utterances
-at c8, whisper-large-v3, mean; the differences are within the run-to-run spread. CustomVoice uses the preset
+per speed point after a warmup of 8 at c8 and 100 at c32. Both columns are stock
+vllm-omni without the library, measured in one session. RTFx = audio seconds per
+wall-clock second, higher is better. Continuity = share of streams delivered
+without a stall. First audio = median first-byte TTFA in seconds, lower is
+better. WER in % over 200 utterances at c8, whisper-large-v3, mean; the
+differences are within the run-to-run spread. CustomVoice uses the preset
 speaker `vivian`, VoiceDesign the description "a calm narrator, slightly
 hoarse". The 0.6B-CustomVoice presets open with 0.4 s of silence, so their
 audible first audio is 0.63 / 0.92 s.
@@ -529,31 +542,32 @@ first chunk carries 1.3 s of audio, enough to cover that gap.
 
 | Model | vllm-omni default, c8 / c32 | Optimized parameters, c8 / c32 | Plus thestage-vllm-omni, c8 / c32 |
 |---|---|---|---|
-| Qwen3-TTS 1.7B-Base | 2% / 0% | 100% / 96% | same as parameters |
-| Qwen3-TTS 0.6B-Base | 2% / 1% | 100% / 98% | same as parameters |
+| Qwen3-TTS 1.7B-Base | 3% / 1% | 100% / 96% | 100% / 100% |
+| Qwen3-TTS 0.6B-Base | 2% / 1% | 100% / 98% | 100% / 100% |
 | VoxCPM2 | 100% / 100% | 100% / 100% | 100% / 100% |
 
 Setup: H100 80GB, vLLM 0.28.0 + vllm-omni 0.28.0, torch 2.13 / CUDA 12.9,
-Seed-TTS-Eval EN, 300 requests per point, warmup 8@c8 + 100@c32. Continuity =
-share of requests played from the first chunk without an underrun.
+Seed-TTS-Eval EN, 300 requests per point, warmup 8@c8 + 100@c32; the library
+column on `chunk75_init16` for Qwen3-TTS. Continuity = share of requests played
+from the first chunk without an underrun.
 
 ### First audio under load
 
 Time to first audio in a model card is measured on one request. Under load it can
-point the wrong way: the Qwen3-TTS vllm-omni default reaches first audio in
-0.087 s at 8 concurrent streams and 2% of those streams play without a gap. The
-tuned file needs 0.254 s and 100% of them play clean.
+point the wrong way: the Qwen3-TTS 1.7B vllm-omni default reaches first audio in
+0.092 s at 8 concurrent streams and 3% of those streams play without a gap. The
+tuned file needs 0.255 s and 100% of them play clean.
 
 | Model | Optimized parameters, first byte / audible | Plus thestage-vllm-omni, first byte / audible |
 |---|---|---|
 | VoxCPM2 | 0.303 / 0.497 | 0.170 / 0.423 |
-| Qwen3-TTS 0.6B-Base | 0.251 / 0.408 | same as parameters |
-| Qwen3-TTS 1.7B-Base | 0.254 / 0.555 | same as parameters |
+| Qwen3-TTS 0.6B-Base | 0.249 / 0.403 | 0.168 / 0.333 |
+| Qwen3-TTS 1.7B-Base | 0.255 / 0.526 | 0.167 / 0.468 |
 
 Setup: H100 80GB, vLLM 0.28.0 + vllm-omni 0.28.0, torch 2.13 / CUDA 12.9,
 Seed-TTS-Eval EN, 300 requests per point, warmup 8@c8 + 100@c32; c8, p50 in
-seconds. "First byte" is from request sent to first audio byte received, the
-figure vendors publish. "Audible" adds the leading silence the model itself
+seconds; the library column on `chunk75_init16` for Qwen3-TTS. "First byte" is
+from request sent to first audio byte received, the figure vendors publish. "Audible" adds the leading silence the model itself
 generates, detected as the first 5 ms window above 5% of the file peak that holds
 for 20 ms; those constants are specific to this repository and are documented in
 [tutorials/streaming_metrics.md](tutorials/streaming_metrics.md).
@@ -563,39 +577,21 @@ audio equals their total response time: 1.27 s and 0.73 s at 8 concurrent stream
 on their recommended settings, against 1.96 s and 4.13 s on the vllm-omni
 defaults.
 
-A first chunk worth at least a second of audio is the price of a stream that does
-not stall. thestage-vllm-omni then recovers 14% to 44% of the first-byte latency
-without shrinking that reserve.
+On vllm-omni's fixed chunk sizes, a first chunk worth at least a second of audio
+is the price of a stream that does not stall. thestage-vllm-omni cuts the
+first-byte latency at 8 streams by 32% to 44% and keeps every stream clean at 8
+and 32.
 
-#### Load-aware chunk ramp
+#### What the library runs on Qwen3-TTS
 
-thestage-vllm-omni serves Qwen3-TTS on a chunk ramp rather than a fixed first
-chunk. The first chunk is small so the first byte leaves early, and each next
-chunk is larger and is produced while the previous one plays. The ramp is
-load-aware: a lightly loaded server starts at 2 codec frames, and once more than
-four requests are in flight it starts at 8 instead, because a small first chunk
-costs a decoder call that a busy card cannot spare. Both ladders end at the same
-75-frame steady chunk.
-
-| Streams | First byte p50 optimized / ramp | Audible p50 optimized / ramp | Continuity optimized / ramp | RTFx optimized / ramp |
-|---|---|---|---|---|
-| c8 | 0.26 / 0.18 | 0.55 / 0.49 | 100% / 100% | 51.1 / 48.4 |
-| c32 | 0.65 / 0.54 | 0.96 / 0.83 | 97% / 98% | 87.7 / 84.8 |
-
-Setup: Qwen3-TTS 1.7B-Base, one H100 80GB, 300 requests per point after a warmup
-of 8@c8 and 100@c32, Seed-TTS-Eval EN prompts, one shared reference clip. First
-byte and audible in seconds, lower is better; audible adds the leading silence
-the model itself generates, so it is what a listener waits for. Continuity is the
-share of streams that played to the end without a stall, higher is better. RTFx
-is audio seconds produced per wall-clock second, higher is better.
-
-Every chunk is one decoder call, and a decoder call re-decodes the 72-frame left
-context whatever the chunk size, so a ramp costs throughput: 5% at 8 streams and
-3% at 32. It buys a first byte 1.4x faster at 8 streams and 1.2x faster at 32,
-and it costs nothing per million characters, because the streams it keeps clean
-make up for the throughput. The ramp needs a decode-graph bucket per ladder
-entry, which is why it captures 88 graphs at startup against the optimized
-configuration's 24, and why it needs about 35 GiB more GPU memory.
+The library column runs three changes on top of the optimized parameters. The
+codec chunk grows through 8, 16 and 32 frames to the 75-frame steady chunk
+(vllm-omni's own `codec_chunk_ramp` key), so the first byte leaves after 0.64 s of
+audio rather than 1.3 s. The codec scheduler starts at most two new requests per
+step and runs those steps before the running streams' next chunks, so a burst of
+arriving requests does not wait on one long decoder call. The code predictor's
+residual-codebook loop runs as one persistent GPU kernel. All three are in the
+library's default overlay `chunk75_init16`.
 
 The upstream adaptive chunk controller (`codec_chunk_adaptive`) was measured too
 and is not shipped: its chunk sizes have no decode-graph ladder on 0.28.0, so
@@ -603,36 +599,52 @@ every chunk decodes eagerly and the server saturates at 32 streams.
 
 ### Cost
 
-![Cost per million input characters](images/cost.png)
+![Cost per million input characters on thestage-vllm-omni](images/cost.png)
 
 Setup: H100 80GB, vLLM 0.28.0 + vllm-omni 0.28.0, torch 2.13 / CUDA 12.9,
-Seed-TTS-Eval EN, 300 requests per point, warmup 8@c8 + 100@c32; each model at the
-highest load it carried without stalls, named beside it on the chart; H100 at $2.99/hour =
-$0.000831/s, so cost per 1M chars = USD/s divided by chars/s times 1e6.
-Characters are input text, counted only over requests delivered without a gap.
+Seed-TTS-Eval EN, every model on thestage-vllm-omni, Qwen3-TTS on
+`chunk75_init16`. Each model is priced at its cheapest load among those
+measured where at least 95% of streams played without a stall, named beside it on
+the chart: 1 to 64 concurrent streams for Qwen3-TTS and VoxCPM2 (100 requests at
+1 and 2 streams, 200 at 4, 300 from 8 up), 8 and 32 for MOSS-TTS and OmniVoice
+(300 requests). H100 at $2.99/hour = $0.000831/s, so cost per 1M chars = USD/s
+divided by chars/s times 1e6. Characters are input text, counted only over
+requests delivered without a gap.
 
-Per hour of synthesized speech the same points are 2.8 cents on VoxCPM2, 3.4
-cents on both Qwen3-TTS sizes, 4.8 on MOSS-TTS and 6.7 on OmniVoice. Hosted TTS
+Per hour of synthesized speech the same points are 2.6 cents on VoxCPM2, 2.5 on
+Qwen3-TTS 1.7B, 2.7 on Qwen3-TTS 0.6B, 5.5 on MOSS-TTS and 6.7 on OmniVoice. Hosted TTS
 APIs list prices per million characters; put a provider's price next to this
 chart. The figures exclude networking, idle capacity and operations.
 
 ### Quality
 
-Word error rate over 200 English utterances at 8 concurrent streams, transcribed
-with whisper-large-v3, is between 1.0% and 1.9% mean with a median of zero on
-every recommended setting above, and no utterance exceeds 50%: Qwen3-TTS 1.7B
-1.30% on the vllm-omni default against 1.15% tuned, 0.6B 1.04%, VoxCPM2 1.30%,
-MOSS-TTS 1.90%, OmniVoice 1.29%. The shipped-versus-tuned Qwen pair is
-statistically indistinguishable. WER measures intelligibility, not voice
-similarity; speaker similarity on the cloning path is unmeasured. The pipeline is
-described in [benchmark/README.md](benchmark/README.md#quality-word-error-rate).
+Word error rate at the recommended setting, in percent, lower is better: each
+sentence is synthesized, transcribed back with whisper-large-v3 and compared with
+the text that was sent.
+
+| Model | WER, % |
+|---|---|
+| Qwen3-TTS 1.7B-Base | 1.06 ± 0.49 |
+| Qwen3-TTS 0.6B-Base | 1.11 ± 0.51 |
+| VoxCPM2 | 1.21 ± 0.52 |
+| MOSS-TTS 8B | 1.88 ± 0.65 |
+| OmniVoice | 1.26 ± 0.54 |
+
+Setup: H100 80GB, vLLM 0.28.0 + vllm-omni 0.28.0, thestage-vllm-omni (Qwen3-TTS on
+`chunk75_init16`), 200 Seed-TTS-Eval EN sentences per model. The value pools
+the whole set, total word edits divided by total reference words, and the number
+after ± is half of a 95% interval bootstrapped over sentences. The same sentences
+on vllm-omni land inside these intervals; MOSS-TTS runs on one stack only. WER measures intelligibility, not voice similarity;
+speaker similarity on the cloning path is unmeasured. The pipeline is described
+in [benchmark/README.md](benchmark/README.md#quality-word-error-rate).
 
 ### Methodology
 
 One NVIDIA H100 80GB SXM, one server at a time, GPU verified empty before each
 run. Closed loop: `cN` means N requests in flight, a new one issued as each
 finishes. Each point is 300 requests after a warmup of 8 at c8 and 100 at c32,
-and both sides of a comparison run back to back in one session. RTFx = audio
+and both sides of a comparison run on the same day, back to back in one session
+unless a table's setup line says otherwise. RTFx = audio
 seconds produced per wall-clock second, higher is better. TTFA = time to first
 audio in seconds, lower is better. Continuity = share of requests whose audio
 never fell behind real-time playback. The full protocol, the metric definitions
