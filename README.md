@@ -142,7 +142,7 @@ optional group, so a benchmark client on a machine with no GPU stays small:
 Groups combine: `pip install .[nvidia,examples]`.
 
 The `nvidia` group also installs `flashinfer-jit-cache`, the precompiled FlashInfer
-kernels for this vLLM pin (a 1.5 GB wheel), so the first start of a server needs
+kernels for this vLLM pin (a 1.9 GB wheel), so the first start of a server needs
 no CUDA toolkit and compiles nothing.
 
 Use `pip install -e .[...]` to install in place.

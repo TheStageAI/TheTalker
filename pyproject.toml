@@ -22,7 +22,7 @@ nvidia = [
     "vllm @ https://github.com/vllm-project/vllm/releases/download/v0.28.0/vllm-0.28.0+cu129-cp38-abi3-manylinux_2_28_x86_64.whl",
     "vllm-omni==0.28.0",
     # precompiled FlashInfer kernels for the pinned vLLM: the first start needs no CUDA toolkit
-    "flashinfer-jit-cache @ https://github.com/flashinfer-ai/flashinfer/releases/download/v0.6.16.post3/flashinfer_jit_cache-0.6.16.post3+cu130-cp39-abi3-manylinux_2_28_x86_64.whl",
+    "flashinfer-jit-cache @ https://github.com/flashinfer-ai/flashinfer/releases/download/v0.6.16.post3/flashinfer_jit_cache-0.6.16.post3+cu129-cp39-abi3-manylinux_2_28_x86_64.whl",
     # model-side package vllm-omni imports but does not declare
     "voxcpm>=2.0",       # VoxCPM2
 ]
