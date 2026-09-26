@@ -24,7 +24,7 @@
 #   REF_AUDIO     reference wav, required when TASK_TYPE=Base; a clean mono
 #                 clip of 5-15 s of the voice to clone (examples/get_reference.py
 #                 downloads an openly licensed one)
-#   REF_TEXT      transcript of REF_AUDIO, word for word
+#   REF_TEXT      transcript of REF_AUDIO, word for word; optional (see below)
 #   SPEAKER       preset speaker name, required when TASK_TYPE=CustomVoice
 #   INSTRUCT      voice description, required when TASK_TYPE=VoiceDesign
 #
@@ -55,7 +55,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 EXTRA_ARGS=(--task-type "$TASK_TYPE")
 if [ "$TASK_TYPE" = "Base" ]; then
     EXTRA_ARGS+=(--ref-audio "${REF_AUDIO:?REF_AUDIO is required for --task-type Base}")
-    EXTRA_ARGS+=(--ref-text "${REF_TEXT:?REF_TEXT is required for --task-type Base}")
+    # The README's first-audio curve ran without the transcript, its throughput
+    # tables with it; both are the same clip.
+    if [ -n "${REF_TEXT:-}" ]; then EXTRA_ARGS+=(--ref-text "$REF_TEXT"); fi
 elif [ "$TASK_TYPE" = "CustomVoice" ]; then
     EXTRA_ARGS+=(--speaker "${SPEAKER:?SPEAKER is required for --task-type CustomVoice}")
 elif [ "$TASK_TYPE" = "VoiceDesign" ]; then

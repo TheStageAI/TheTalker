@@ -19,11 +19,13 @@ Every number in the top-level README's Benchmarks section was taken this way.
 - **Software.** vLLM 0.28.0 (cu129 wheel), vllm-omni 0.28.0, torch 2.13, CUDA
   12.9, driver 580.
 - **Load.** Closed loop: `cN` means N requests in flight, a new one issued as
-  each finishes. Points are c8 and c32.
-- **Size of a point.** 300 requests, after a warmup of 8 requests at c8 and 100
-  at c32. The warmup requests are issued into the same run and excluded from the
-  reported statistics (`--warmup`), so the server is at steady state before the
-  first scored request. The warmup is per point, not one number for the sweep:
+  each finishes. Points are c8 and c32; the first-audio curve adds c1 to c64 and
+  sends the reference clip without its transcript, the c8 and c32 tables send both.
+- **Size of a point.** 300 scored requests, after a warmup of 8 requests at c8 and
+  100 at c32. The warmup requests (`--warmup`) are issued first, on top of
+  `--requests`, and are excluded from the reported statistics; `aggregate_RTFx`
+  divides the scored audio by the wall-clock span of the scored requests only, so
+  the warmup does not dilute it. The warmup is per point, not one number for the sweep:
   the codec captures CUDA graphs on first use, and a c32 point needs enough
   warmup that the scored requests are not the ones paying for that.
   `examples/run_sweep.sh` applies 8 at concurrency 8 or below and 100 above it
@@ -124,9 +126,9 @@ Key flags:
 
 | flag | meaning |
 |---|---|
-| `--concurrency` / `--requests` | closed-loop load: N requests, `--concurrency` in flight at a time |
+| `--concurrency` / `--requests` | closed-loop load: N scored requests, `--concurrency` in flight at a time |
 | `--arrival-rate` | Poisson req/s instead of closed loop (0 = one wave of `--concurrency`) |
-| `--warmup` | first N requests excluded from the reported stats |
+| `--warmup` | N warmup requests issued before the `--requests` scored ones; excluded from the stats and from the RTFx window |
 | `--seed` | seed of the Poisson schedule |
 | `--max-new-tokens` | server-side cap on generated codec tokens (default 256, the protocol value) |
 | `--max-error-rate` | share of scored requests that may error before the run is called a failure (default 0.05) |

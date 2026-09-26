@@ -202,18 +202,29 @@ def run_one(args, barrier, prompt_rows, ref_audio_b64, index: int, run_t0: float
     )
 
 
+def scored_window_s(scored: list[dict]) -> float:
+    """Wall-clock span from the first scored submit to the last scored finish; the warmup is outside it."""
+    if not scored:
+        return 0.0
+    start = min(r["t_submit_s"] for r in scored)
+    end = max(r["t_submit_s"] + r["wall_s"] for r in scored)
+    return end - start
+
+
 def summarize(rows: list[dict], elapsed: float, extra: dict) -> dict:
     scored = [r for r in rows if not r["warmup"]]
     ok_rows = [r for r in scored if r["ok"]]
     audio = sum(r["audio_s"] for r in ok_rows)
+    window = scored_window_s(scored)
     summary = {
         "n": len(scored),
         "warmup_excluded": len(rows) - len(scored),
         "completed": len(ok_rows),
         "errors": len(scored) - len(ok_rows),
-        "elapsed_seconds": elapsed,
+        "elapsed_seconds": window,
+        "run_elapsed_seconds": elapsed,
         "aggregate_audio_seconds": audio,
-        "aggregate_RTFx": (audio / elapsed) if elapsed else None,
+        "aggregate_RTFx": (audio / window) if window else None,
         "ttfa_p50": percentile([r["ttfa_s"] for r in ok_rows], 0.50),
         "ttfa_p95": percentile([r["ttfa_s"] for r in ok_rows], 0.95),
         "ttfa_audible_p50": percentile([r["ttfa_audible_s"] for r in ok_rows], 0.50),
@@ -242,7 +253,8 @@ def main() -> int:
     parser.add_argument("--out-dir", type=Path, required=True)
     parser.add_argument("--concurrency", type=int, default=64)
     parser.add_argument("--requests", type=int, default=0,
-                        help="total requests; 0 = one wave of --concurrency. >concurrency = closed loop")
+                        help="scored requests, issued after the --warmup ones; 0 = one wave of --concurrency. "
+                             ">concurrency = closed loop")
     parser.add_argument("--texts-jsonl", type=Path, required=True)
     parser.add_argument("--task-type", default="Base", choices=["Base", "CustomVoice", "VoiceDesign"],
                         help="request body task_type; CustomVoice/VoiceDesign never send ref_audio/ref_text")
@@ -267,15 +279,18 @@ def main() -> int:
     parser.add_argument("--timeout-s", type=float, default=600.0)
     parser.add_argument("--arrival-rate", type=float, default=0.0, help="req/s Poisson; 0 = wave")
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--warmup", type=int, default=0, help="first N requests excluded from stats")
+    parser.add_argument("--warmup", type=int, default=0,
+                        help="N warmup requests issued before the scored ones; excluded from the stats "
+                             "and from the RTFx window")
     parser.add_argument("--continuity-threshold-s", type=float, default=None)
     parser.add_argument("--max-error-rate", type=float, default=0.05,
                         help="fail the run when more than this share of scored requests "
                              "errored (0 = tolerate none, 1 = never fail)")
     args = parser.parse_args()
 
-    n_requests = args.requests or args.concurrency
-    args.profile = "poisson" if args.arrival_rate > 0 else ("closed_loop" if n_requests > args.concurrency else "wave")
+    scored_requests = args.requests or args.concurrency
+    n_requests = scored_requests + args.warmup
+    args.profile = "poisson" if args.arrival_rate > 0 else ("closed_loop" if scored_requests > args.concurrency else "wave")
     args.point = f"r{args.arrival_rate:g}" if args.arrival_rate > 0 else f"c{args.concurrency}"
     args.run_id = f"{RUN}__{args.profile}__{args.point}"
 

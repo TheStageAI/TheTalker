@@ -566,7 +566,9 @@ tuned file needs 0.255 s and 100% of them play clean.
 
 Setup: H100 80GB, vLLM 0.28.0 + vllm-omni 0.28.0, torch 2.13 / CUDA 12.9,
 Seed-TTS-Eval EN, 300 requests per point, warmup 8@c8 + 100@c32; c8, p50 in
-seconds; the library column on `chunk75_init16` for Qwen3-TTS. "First byte" is
+seconds; the library column on `chunk75_init16` for Qwen3-TTS; the load sweep
+behind the first-audio curve sends the reference clip without its transcript,
+the throughput tables send both. "First byte" is
 from request sent to first audio byte received, the figure vendors publish. "Audible" adds the leading silence the model itself
 generates, detected as the first 5 ms window above 5% of the file peak that holds
 for 20 ms; those constants are specific to this repository and are documented in
@@ -644,7 +646,10 @@ One NVIDIA H100 80GB SXM, one server at a time, GPU verified empty before each
 run. Closed loop: `cN` means N requests in flight, a new one issued as each
 finishes. Each point is 300 requests after a warmup of 8 at c8 and 100 at c32,
 and both sides of a comparison run on the same day, back to back in one session
-unless a table's setup line says otherwise. RTFx = audio
+unless a table's setup line says otherwise. Absolute RTFx depends on the
+reference clip, since it sets how much audio each request produces; the tables
+used one 4.6 s clip that is not distributed, so compare configurations with one
+clip against each other rather than against the tables. RTFx = audio
 seconds produced per wall-clock second, higher is better. TTFA = time to first
 audio in seconds, lower is better. Continuity = share of requests whose audio
 never fell behind real-time playback. The full protocol, the metric definitions

@@ -97,3 +97,22 @@ def test_build_request_record_schema_and_continuity():
     assert record["ttfa_s"] == 0.0
     assert record["audio_s"] > 0.0
     assert record["delivery_rtfx_audio_over_wall"] > 0.0
+
+
+def test_summarize_rtfx_window_excludes_warmup():
+    from thetalker.client import scored_window_s, summarize
+
+    def row(index, warmup, submit, wall, audio):
+        return {
+            "warmup": warmup, "request_index": index, "ok": True, "t_submit_s": submit, "wall_s": wall,
+            "audio_s": audio, "ttfa_s": 0.1, "ttfa_audible_s": 0.2, "buffer_deficit_s": 0.0,
+            "continuity_ok": True, "gap_p95_s": 0.0,
+        }
+
+    rows = [row(0, True, 0.0, 5.0, 10.0), row(1, False, 5.0, 2.0, 4.0), row(2, False, 6.0, 3.0, 6.0)]
+    assert scored_window_s([r for r in rows if not r["warmup"]]) == 4.0
+    s = summarize(rows, elapsed=9.0, extra={})
+    assert s["n"] == 2 and s["warmup_excluded"] == 1
+    assert s["run_elapsed_seconds"] == 9.0
+    assert s["elapsed_seconds"] == 4.0
+    assert s["aggregate_RTFx"] == (4.0 + 6.0) / 4.0
