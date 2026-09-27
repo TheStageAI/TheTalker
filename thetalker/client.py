@@ -89,14 +89,18 @@ def ref_audio_b64_for(path: str) -> str:
         return _ref_b64_cache[path]
 
 
-def run_one(args, barrier, prompt_rows, ref_audio_b64, index: int, run_t0: float, delay: float) -> dict:
-    prompt = prompt_rows[index % len(prompt_rows)]
-    request_id = f"req_{index:04d}"
+def build_body(args, text: str, *, row: dict | None = None, ref_audio_b64: str | None = None) -> dict:
+    if getattr(args, "body_profile", "vllm-omni") == "nari":
+        # Nari's request schema forbids unknown fields; send only the ones it defines.
+        return {"input": text, "voice": args.speaker, "language": args.language or "English", "stream": True,
+                "response_format": "pcm", "non_streaming_mode": False, "max_new_tokens": args.max_new_tokens}
+
+    row = row or {}
     task_type = getattr(args, "task_type", "Base") or "Base"
     body = {
-        "input": prompt["text"],
+        "input": text,
         "task_type": task_type,
-        "language": prompt.get("language", args.language),
+        "language": row.get("language", args.language),
         "max_new_tokens": args.max_new_tokens,
         "stream": True,
         "stream_format": args.stream_format,
@@ -110,10 +114,17 @@ def run_one(args, barrier, prompt_rows, ref_audio_b64, index: int, run_t0: float
         body["instructions"] = instruct
     if task_type not in ("CustomVoice", "VoiceDesign"):
         # only the Base (voice clone) task carries a reference
-        body["ref_audio"] = ref_audio_b64_for(prompt["ref_audio"]) if prompt.get("ref_audio") else ref_audio_b64
-        body["ref_text"] = prompt.get("ref_text", args.ref_text)
+        body["ref_audio"] = ref_audio_b64_for(row["ref_audio"]) if row.get("ref_audio") else ref_audio_b64
+        body["ref_text"] = row.get("ref_text", args.ref_text)
     if args.model:
         body["model"] = args.model
+    return body
+
+
+def run_one(args, barrier, prompt_rows, ref_audio_b64, index: int, run_t0: float, delay: float) -> dict:
+    prompt = prompt_rows[index % len(prompt_rows)]
+    request_id = f"req_{index:04d}"
+    body = build_body(args, prompt["text"], row=prompt, ref_audio_b64=ref_audio_b64)
     payload = json.dumps(body)
     if barrier is not None:
         barrier.wait()
@@ -250,6 +261,8 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=8091)
     parser.add_argument("--path", default="/v1/audio/speech")
     parser.add_argument("--model", default="")
+    parser.add_argument("--body-profile", choices=["vllm-omni", "nari"], default="vllm-omni",
+                        help="request body shape; nari = Nari Qwen3-TTS engine")
     parser.add_argument("--out-dir", type=Path, required=True)
     parser.add_argument("--concurrency", type=int, default=64)
     parser.add_argument("--requests", type=int, default=0,

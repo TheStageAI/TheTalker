@@ -116,3 +116,24 @@ def test_summarize_rtfx_window_excludes_warmup():
     assert s["run_elapsed_seconds"] == 9.0
     assert s["elapsed_seconds"] == 4.0
     assert s["aggregate_RTFx"] == (4.0 + 6.0) / 4.0
+
+
+def test_nari_body_profile_sends_only_nari_fields():
+    import types
+    from thetalker.client import build_body
+
+    args = types.SimpleNamespace(body_profile="nari", task_type="CustomVoice", speaker="Ryan", language="English",
+                                 model="", max_new_tokens=256, stream_format="audio", ref_text=None, instruct=None)
+    body = build_body(args, "Hello there.")
+    assert body == {"input": "Hello there.", "voice": "Ryan", "language": "English", "stream": True,
+                    "response_format": "pcm", "non_streaming_mode": False, "max_new_tokens": 256}
+
+
+def test_default_body_profile_unchanged():
+    import types
+    from thetalker.client import build_body
+
+    args = types.SimpleNamespace(body_profile="vllm-omni", task_type="CustomVoice", speaker="Ryan", language="English",
+                                 model="", max_new_tokens=256, stream_format="audio", ref_text=None, instruct=None)
+    body = build_body(args, "Hello there.")
+    assert body["task_type"] == "CustomVoice" and body["speaker"] == "Ryan" and "voice" not in body
