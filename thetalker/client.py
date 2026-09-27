@@ -312,6 +312,8 @@ def main() -> int:
         parser.error("--ref-audio is required for --task-type Base")
     if args.task_type == "VoiceDesign" and not args.instruct:
         parser.error("--task-type VoiceDesign requires --instruct")
+    if args.body_profile == "nari" and not args.speaker:
+        parser.error("--body-profile nari requires --speaker")
     ref_audio_b64 = None
     if args.ref_audio is not None and not ref_less_task:
         ref_audio_b64 = "data:audio/wav;base64," + base64.b64encode(args.ref_audio.read_bytes()).decode("ascii")

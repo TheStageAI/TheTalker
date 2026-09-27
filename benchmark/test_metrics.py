@@ -137,3 +137,20 @@ def test_default_body_profile_unchanged():
                                  model="", max_new_tokens=256, stream_format="audio", ref_text=None, instruct=None)
     body = build_body(args, "Hello there.")
     assert body["task_type"] == "CustomVoice" and body["speaker"] == "Ryan" and "voice" not in body
+
+
+def test_nari_body_profile_requires_speaker(tmp_path, monkeypatch):
+    import sys
+
+    import pytest
+
+    from thetalker.client import main
+
+    texts_path = tmp_path / "texts.jsonl"
+    texts_path.write_text('{"text": "hi"}\n', encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", [
+        "client.py", "--body-profile", "nari", "--task-type", "CustomVoice",
+        "--out-dir", str(tmp_path / "out"), "--texts-jsonl", str(texts_path),
+    ])
+    with pytest.raises(SystemExit):
+        main()
