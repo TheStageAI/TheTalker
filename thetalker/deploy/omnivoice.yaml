@@ -1,0 +1,21 @@
+# OmniVoice (k2-fsa/OmniVoice) -- the optimal configuration for vllm-omni 0.30.0.
+#
+# The vllm-omni column of the Benchmarks tables was measured with this file on
+# vllm-omni 0.30.0, one H100 80GB. It is self-contained (no base_config) and is
+# for stock vllm-omni only: thestage-vllm-omni serves its own configuration and
+# takes no deploy file.
+#
+# Changes vs vllm-omni 0.30.0's deploy/omnivoice.yaml:
+#   stage 0 dtype float32 -> bfloat16.
+#   stage 0 without max_num_seqs (stock: 8) and request_batch_max_wait_ms
+#     (stock: 10): stock 0.30.0 added both; the measured file has neither.
+
+async_chunk: false
+pipeline: omnivoice
+stages:
+  - stage_id: 0
+    devices: '0'
+    enforce_eager: true
+    trust_remote_code: true
+    distributed_executor_backend: mp
+    dtype: bfloat16  # stock: float32

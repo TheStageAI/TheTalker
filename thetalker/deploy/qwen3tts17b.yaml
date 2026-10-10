@@ -1,0 +1,93 @@
+# Qwen3-TTS 1.7B (Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice) -- the optimal
+# configuration for vllm-omni 0.30.0.
+#
+# The vllm-omni column of the Benchmarks tables was measured with this file on
+# vllm-omni 0.30.0, one H100 80GB. It is self-contained (no base_config) and is
+# for stock vllm-omni only: thestage-vllm-omni serves its own configuration and
+# takes no deploy file.
+#
+# Changes vs vllm-omni 0.30.0's deploy/qwen3_tts.yaml:
+#   connector extra: initial_codec_chunk_frames 1 -> 16, codec_chunk_frames
+#     25 -> 75, decode_cudagraph_batch_sizes [1, 2, 4, 8] (stock leaves it
+#     unset, so the decoder replays one graph per request per chunk with no
+#     cross-request batching), ref_code_context_frames 72 (explicit; the code
+#     default is the same).
+#   model_runner v1 (stock: v2), stage 0 max_num_batched_tokens 32768 (stock:
+#     512), stage 1 without dtype (stock: bfloat16): stock 0.30.0 changed these
+#     three; the values here are the ones measured.
+#   platforms: no musa/xpu entries and no model_runner pins (non-CUDA only,
+#     inert on NVIDIA).
+
+async_chunk: true
+# stock 0.30.0 sets v2; v1 is the loader default and what was measured
+model_runner: v1
+connectors:
+  connector_of_shared_memory:
+    name: SharedMemoryConnector
+    extra:
+      codec_streaming: true
+      connector_get_sleep_s: 0.01
+      connector_get_max_wait_first_chunk: 3000
+      connector_get_max_wait: 300
+      codec_chunk_frames: 75  # stock: 25
+      codec_left_context_frames: 72
+      initial_codec_chunk_frames: 16  # stock: 1
+      decode_batch_max_size: 4
+      ref_code_context_frames: 72
+      decode_cudagraph_batch_sizes: [1, 2, 4, 8]  # stock: unset
+stages:
+  - stage_id: 0
+    max_num_seqs: 64
+    gpu_memory_utilization: 0.3
+    trust_remote_code: true
+    enable_prefix_caching: false
+    async_scheduling: true
+    max_num_batched_tokens: 32768  # stock: 512
+    max_model_len: 4096
+    devices: '0'
+    output_connectors:
+      to_stage_1: connector_of_shared_memory
+    default_sampling_params:
+      temperature: 0.9
+      top_k: 50
+      max_tokens: 4096
+      min_tokens: 2
+      repetition_penalty: 1.05
+    silence_ban_frames: 0
+    subtalker_sampling_params:
+      do_sample: true
+      temperature: 0.9
+      top_k: 50
+      top_p: 1.0
+  - stage_id: 1
+    max_num_seqs: 64
+    gpu_memory_utilization: 0.3
+    enforce_eager: false
+    trust_remote_code: true
+    enable_prefix_caching: false
+    async_scheduling: true
+    max_num_batched_tokens: 65536
+    max_model_len: 65536
+    devices: '0'
+    input_connectors:
+      from_stage_0: connector_of_shared_memory
+    default_sampling_params:
+      temperature: 0.0
+      top_p: 1.0
+      top_k: -1
+      max_tokens: 65536
+      repetition_penalty: 1.0
+platforms:
+  npu:
+    stages:
+      - stage_id: 0
+        enforce_eager: false
+        compilation_config:
+          cudagraph_mode: PIECEWISE
+      - stage_id: 1
+        compilation_config:
+          cudagraph_mode: PIECEWISE
+  rocm:
+    stages:
+      - stage_id: 1
+        enforce_eager: true

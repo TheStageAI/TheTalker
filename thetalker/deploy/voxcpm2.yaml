@@ -1,0 +1,49 @@
+# VoxCPM2 (openbmb/VoxCPM2) -- the optimal configuration for vllm-omni 0.30.0.
+#
+# The vllm-omni column of the Benchmarks tables was measured with this file on
+# vllm-omni 0.30.0, one H100 80GB. It is self-contained (no base_config) and is
+# for stock vllm-omni only: thestage-vllm-omni serves its own configuration and
+# takes no deploy file.
+#
+# Changes vs vllm-omni 0.30.0's deploy/voxcpm2.yaml:
+#   stage 0 max_num_seqs 8 -> 32 and unified_decode_graph_max_batch_size
+#     8 -> 32, raised together: raising only one leaves batches above the graph
+#     limit off the CUDA decode graph.
+# Sized for an 80 GB card (see tutorials/known_issues_0.28.md).
+
+async_chunk: false
+dtype: bfloat16
+stages:
+  - stage_id: 0
+    max_num_seqs: 32  # stock: 8
+    gpu_memory_utilization: 0.9
+    kv_cache_memory_bytes: 6442450944
+    enforce_eager: true
+    trust_remote_code: true
+    enable_prefix_caching: false
+    async_scheduling: true
+    max_num_batched_tokens: 4096
+    max_model_len: 4096
+    devices: '0'
+    engine_extras:
+      hf_overrides:
+        voxcpm2_runtime_config:
+          audio_emit_every: 1
+          vae_decode_every: 3
+          enable_batched_cfm: true
+          enable_batched_vae_decode: true
+          coalesce_audio_d2h: true
+          enable_loc_dit_fused_qkv: true
+          enable_loc_dit_fused_mlp: true
+          enable_loc_dit_zero_dt_cache: true
+          enable_loc_dit_skip_qkv_contig: true
+          enable_loc_dit_reduce_overhead_no_cg: true
+          enable_unified_decode_graph: true
+          unified_decode_graph_max_batch_size: 32  # stock: 8
+    default_sampling_params:
+      temperature: 0.0
+      top_p: 1.0
+      top_k: -1
+      max_tokens: 4096
+      seed: 42
+      repetition_penalty: 1.0

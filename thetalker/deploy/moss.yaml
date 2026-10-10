@@ -1,0 +1,65 @@
+# MOSS-TTS 8B (OpenMOSS-Team/MOSS-TTS) -- the optimal configuration for
+# vllm-omni 0.30.0.
+#
+# vllm-omni 0.30.0 does not start MOSS-TTS (see tutorials/known_issues_0.28.md),
+# so the Benchmarks tables have no vllm-omni number for it; this file is what
+# stock vllm-omni would serve it with. thestage-vllm-omni serves its own
+# configuration and takes no deploy file.
+#
+# Changes vs vllm-omni 0.30.0's deploy/moss_tts.yaml:
+#   stage 0 max_num_seqs 4 -> 32, gpu_memory_utilization 0.85 -> 0.30.
+#   stage 1 max_num_seqs 1 -> 8 (codec stream-state capacity; 1 serializes
+#     every codec decode), gpu_memory_utilization 0.12 -> 0.30,
+#     max_num_batched_tokens 196608 -> 65536.
+#   platforms: no rocm entry (non-CUDA only, inert on NVIDIA).
+
+async_chunk: true
+trust_remote_code: true
+connectors:
+  shm:
+    name: SharedMemoryConnector
+    extra:
+      codec_streaming: true
+      connector_get_sleep_s: 0.01
+      connector_get_max_wait_first_chunk: 3000
+      connector_get_max_wait: 300
+      codec_chunk_frames: 25
+      codec_left_context_frames: 0
+      decode_cudagraph_capture_sizes: [4, 8, 16, 25, 32, 50, 64, 100, 128, 200, 256]
+stages:
+  - stage_id: 0
+    max_num_seqs: 32  # stock: 4
+    gpu_memory_utilization: 0.3  # stock: 0.85
+    enable_prefix_caching: false
+    async_scheduling: true
+    max_num_batched_tokens: 4096
+    max_model_len: 4096
+    devices: '0'
+    output_connectors:
+      to_stage_1: shm
+    default_sampling_params:
+      temperature: 1.7
+      top_p: 0.8
+      top_k: 25
+      max_tokens: 4096
+      seed: 42
+      repetition_penalty: 1.0
+      stop_token_ids: [151645]
+  - stage_id: 1
+    max_num_seqs: 8  # stock: 1
+    gpu_memory_utilization: 0.3  # stock: 0.12
+    enforce_eager: false
+    enable_prefix_caching: false
+    async_scheduling: true
+    max_num_batched_tokens: 65536  # stock: 196608
+    max_model_len: 196608
+    devices: '0'
+    input_connectors:
+      from_stage_0: shm
+    default_sampling_params:
+      temperature: 0.0
+      top_p: 1.0
+      top_k: -1
+      max_tokens: 65536
+      seed: 42
+      repetition_penalty: 1.0
