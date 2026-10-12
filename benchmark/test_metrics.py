@@ -1,0 +1,156 @@
+"""Smoke tests for thetalker/metrics.py -- no server, no GPU.
+
+Run with: pytest benchmark/test_metrics.py
+"""
+
+from __future__ import annotations
+
+from thetalker.metrics import (
+    build_request_record,
+    compute_continuity_stats,
+    percentile,
+)
+
+SAMPLE_RATE = 24000
+SAMPLE_WIDTH = 2
+CHANNELS = 1
+BYTES_PER_S = SAMPLE_RATE * SAMPLE_WIDTH * CHANNELS
+
+
+def test_percentile_basic():
+    assert percentile([1.0, 2.0, 3.0, 4.0], 0.5) == 2.5
+    assert percentile([], 0.5) is None
+    assert percentile([None, None], 0.9) is None
+
+
+def test_continuity_stats_no_gap():
+    """Chunks arrive faster than playback consumes them: no underrun."""
+    chunk_bytes = [BYTES_PER_S // 10] * 5  # 100 ms of audio per chunk
+    # arrivals well ahead of the 100 ms/chunk playback clock
+    chunk_arrival_s = [0.0, 0.02, 0.04, 0.06, 0.08]
+    stats = compute_continuity_stats(
+        chunk_arrival_times_s=chunk_arrival_s,
+        chunk_bytes=chunk_bytes,
+        sample_rate=SAMPLE_RATE,
+        sample_width=SAMPLE_WIDTH,
+        channels=CHANNELS,
+        threshold_s=0.1,
+    )
+    assert stats.is_continuous
+    assert stats.max_underrun_s == 0.0
+    assert stats.underrun_event_count == 0
+
+
+def test_continuity_stats_underrun():
+    """A long gap between chunk 0 and chunk 1 starves playback."""
+    chunk_bytes = [BYTES_PER_S // 10] * 3  # 100 ms of audio per chunk
+    chunk_arrival_s = [0.0, 1.0, 1.1]  # 1 s gap after the first chunk
+    stats = compute_continuity_stats(
+        chunk_arrival_times_s=chunk_arrival_s,
+        chunk_bytes=chunk_bytes,
+        sample_rate=SAMPLE_RATE,
+        sample_width=SAMPLE_WIDTH,
+        channels=CHANNELS,
+        threshold_s=0.1,
+    )
+    assert not stats.is_continuous
+    assert stats.max_underrun_s > 0.8
+    assert stats.underrun_event_count >= 1
+
+
+def test_build_request_record_schema_and_continuity():
+    chunk_bytes = [BYTES_PER_S // 10] * 5
+    chunk_arrival_s = [0.0, 0.02, 0.04, 0.06, 0.08]
+    pcm = b"\x00\x01" * (sum(chunk_bytes) // 2)
+    record = build_request_record(
+        backend="test",
+        run="test_run_label",
+        run_id="test_run",
+        profile="wave",
+        point="c1",
+        repeat=0,
+        warmup=False,
+        request_index=0,
+        request_id="req_0000",
+        sample_id="sample_0",
+        group="",
+        text="hello world",
+        ok=True,
+        finish_reason="stream_end",
+        errors=[],
+        t_submit_s=0.0,
+        t_connect_ms=1.5,
+        chunk_arrival_s=chunk_arrival_s,
+        chunk_bytes=chunk_bytes,
+        wall_s=0.08,
+        pcm_bytes=pcm,
+        sample_rate=SAMPLE_RATE,
+        sample_width=SAMPLE_WIDTH,
+        channels=CHANNELS,
+        threshold_s=0.1,
+        wav=None,
+        server_meta={},
+    )
+    assert record["ok"] is True
+    assert record["continuity_ok"] is True
+    assert record["chunks"] == 5
+    assert record["ttfa_s"] == 0.0
+    assert record["audio_s"] > 0.0
+    assert record["delivery_rtfx_audio_over_wall"] > 0.0
+
+
+def test_summarize_rtfx_window_excludes_warmup():
+    from thetalker.client import scored_window_s, summarize
+
+    def row(index, warmup, submit, wall, audio):
+        return {
+            "warmup": warmup, "request_index": index, "ok": True, "t_submit_s": submit, "wall_s": wall,
+            "audio_s": audio, "ttfa_s": 0.1, "ttfa_audible_s": 0.2, "buffer_deficit_s": 0.0,
+            "continuity_ok": True, "gap_p95_s": 0.0,
+        }
+
+    rows = [row(0, True, 0.0, 5.0, 10.0), row(1, False, 5.0, 2.0, 4.0), row(2, False, 6.0, 3.0, 6.0)]
+    assert scored_window_s([r for r in rows if not r["warmup"]]) == 4.0
+    s = summarize(rows, elapsed=9.0, extra={})
+    assert s["n"] == 2 and s["warmup_excluded"] == 1
+    assert s["run_elapsed_seconds"] == 9.0
+    assert s["elapsed_seconds"] == 4.0
+    assert s["aggregate_RTFx"] == (4.0 + 6.0) / 4.0
+
+
+def test_nari_body_profile_sends_only_nari_fields():
+    import types
+    from thetalker.client import build_body
+
+    args = types.SimpleNamespace(body_profile="nari", task_type="CustomVoice", speaker="Ryan", language="English",
+                                 model="", max_new_tokens=256, stream_format="audio", ref_text=None, instruct=None)
+    body = build_body(args, "Hello there.")
+    assert body == {"input": "Hello there.", "voice": "Ryan", "language": "English", "stream": True,
+                    "response_format": "pcm", "non_streaming_mode": False, "max_new_tokens": 256}
+
+
+def test_default_body_profile_unchanged():
+    import types
+    from thetalker.client import build_body
+
+    args = types.SimpleNamespace(body_profile="vllm-omni", task_type="CustomVoice", speaker="Ryan", language="English",
+                                 model="", max_new_tokens=256, stream_format="audio", ref_text=None, instruct=None)
+    body = build_body(args, "Hello there.")
+    assert body["task_type"] == "CustomVoice" and body["speaker"] == "Ryan" and "voice" not in body
+
+
+def test_nari_body_profile_requires_speaker(tmp_path, monkeypatch):
+    import sys
+
+    import pytest
+
+    from thetalker.client import main
+
+    texts_path = tmp_path / "texts.jsonl"
+    texts_path.write_text('{"text": "hi"}\n', encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", [
+        "client.py", "--body-profile", "nari", "--task-type", "CustomVoice",
+        "--out-dir", str(tmp_path / "out"), "--texts-jsonl", str(texts_path),
+    ])
+    with pytest.raises(SystemExit):
+        main()
